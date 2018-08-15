@@ -23,7 +23,7 @@ void ParticleFilter::init(double x, double y, double theta, double std[]) {
 	default_random_engine gen;
     		
 	// Set the number of particles.
-	num_particles = 10;
+	num_particles = 100;
 	
 	// Initialize all particles to first position
 	// (based on estimates of x, y, theta and their uncertainties from GPS)
@@ -84,27 +84,18 @@ void ParticleFilter::dataAssociation(std::vector<LandmarkObs> predicted, std::ve
 	//   observed measurement to this particular landmark.
 	// NOTE: this method will NOT be called by the grading code. But you will probably find it useful to 
 	//   implement this method and use it as a helper during the updateWeights phase.
-	vector<int> a = vector<int>(observations.size());
-	vector<double> x = vector<double>(observations.size());
-	vector<double> y = vector<double>(observations.size());
-	
+		
 	for (int i=0; i<observations.size(); i++) {
 		double distance = 9999;
 		for (int j=0; j<(int)predicted.size(); j++) {
 			double d = dist(observations[i].x, observations[i].y, predicted[j].x, predicted[j].y);
 			if (d<distance) {
 				distance = d;
-				a[i] = predicted[j].id;
-				x[i] = predicted[j].x;
-				y[i] = predicted[j].y;
-				//observations[i].id = predicted[j].id;
+				observations[i].id = predicted[j].id;
 			}
 		}
 	}
 	
-	associations = a;
-	sense_x = x;
-	sense_y = y;
 }
 
 void ParticleFilter::updateWeights(double sensor_range, double std_landmark[], 
@@ -125,7 +116,9 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 		// find landmarks in range
 		vector<LandmarkObs> landmarks_in_range;
 		for (int j=0; j<(int)map_landmarks.landmark_list.size(); j++) {
-			double dist_landmark = dist(map_landmarks.landmark_list[j].x_f, map_landmarks.landmark_list[j].y_f, particles[i].x, particles[i].y);
+			double mx = map_landmarks.landmark_list[j].x_f;
+			double my = map_landmarks.landmark_list[j].y_f;
+			double dist_landmark = dist(mx, my, particles[i].x, particles[i].y);
 			
 			if ( dist_landmark <= sensor_range) {
 				LandmarkObs obs;
@@ -136,20 +129,20 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 				//cout << obs.x << " " << obs.y << " " << obs.id << endl;
 			}
 		}
-		cout << "Number of Landmarks in range: " << landmarks_in_range.size() << endl;
+		//cout << "Number of Landmarks in range: " << landmarks_in_range.size() << endl;
 		// transformation of observations from VEHICLE'S coordinate system into MAP'S coordinate system
 		vector<LandmarkObs> observations_MCS;
 		for (int j=0; j<(int)observations.size(); j++) {
 			LandmarkObs obs;
 			double p_theta = particles[i].theta;
 			double x_obs = observations[j].x;
-			double y_obs = observations[j].y
-			obs.id = observations[j].id_i;
+			double y_obs = observations[j].y;
+			//obs.id = observations[j].id_i;
         		obs.x = particles[i].x + cos(p_theta)*x_obs - sin(p_theta)*y_obs;
 			obs.y = particles[i].y + sin(p_theta)*x_obs + cos(p_theta)*y_obs;
 			observations_MCS.push_back(obs);
 		}
-		cout << "Number of Observations: " << observations_MCS.size() << endl;
+		//cout << "Number of Observations: " << observations_MCS.size() << endl;
 		
 		// Find closest predicted measurements to observed measurements and assign the observed measurements to this particular landmarks
 		dataAssociation(landmarks_in_range, observations_MCS);
@@ -159,15 +152,24 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 		
 		for (int j=0; j<(int)observations_MCS.size(); j++) {
 			double mu_x, mu_y;
+			bool id_notfound = true;
 			for (int k=0; k<(int)landmarks_in_range.size(); k++) {
+				//bool id_notfound = true;
 				if (landmarks_in_range[k].id == observations_MCS[j].id) {
+					//cout << "ID is the same" << endl;
 					mu_x = landmarks_in_range[k].x;
 					mu_y = landmarks_in_range[k].y;
+					id_notfound = false;
 				}
 				// ToDo: catch else error!
 			}
+			if (id_notfound) {
+				cout << "no ID found !!!!!!!!!!!!!!!" << endl;
+			}
 			// calculate exponent
-			double exponent = ( pow((observations_MCS[j].x-mu_x),2) / 2*pow(std_landmark[0],2) ) + ( pow((observations_MCS[j].y-mu_y),2)/ 2*pow(std_landmark[1],2));
+			double ox = observations_MCS[j].x;
+			double oy = observations_MCS[j].y;
+			double exponent = ( pow((ox-mu_x),2) / 2*pow(std_landmark[0],2) ) + ( pow((oy-mu_y),2)/ 2*pow(std_landmark[1],2));
 			
 			// calculate weight using normalization terms and exponent
 			double weight = gauss_norm * exp(-exponent);
@@ -177,12 +179,17 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 	}
 	
 	// Normalization of the weights
-	double weights_sum =  accumulate(weights.begin(), weights.end(), 0); // source: https://stackoverflow.com/questions/6743003/how-calculate-sum-of-values-in-stdvectorint
-	//cout << weights_sum << endl;
-	weights /= weights_sum;
+	double weights_sum = 0.0;
+	for (int i=0; i<weights.size(); i++) {
+		weights_sum += weights[i];
+	} 
+	//accumulate(weights.begin(), weights.end(), 0); // source: https://stackoverflow.com/questions/6743003/how-calculate-sum-of-values-in-stdvectorint
+	cout << weights_sum << endl;
+	//weights /= weights_sum;
 	
 	for (int i=0; i<num_particles; i++) {
-		particles[i].weight = weights[i];
+		weights[i] /= weights_sum;
+		particles[i].weight /= weights_sum;
 	}	
 }
 
