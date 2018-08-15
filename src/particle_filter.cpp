@@ -32,16 +32,19 @@ void ParticleFilter::init(double x, double y, double theta, double std[]) {
 	normal_distribution<double> dist_x(x, std[0]);
 	normal_distribution<double> dist_y(y, std[1]);
 	normal_distribution<double> dist_theta(theta, std[2]);
-			
+	
+	particles = vector<Particle>(num_particles);	
 	for (int i=0; i<num_particles; i++) {
 		Particle p;
 		p.id = i;
 		p.x = dist_x(gen);
 		p.y = dist_y(gen);
 		p.theta = dist_theta(gen);
-		p.weight = 1; // and all weights to 1.
+		p.weight = 1.0; // and all weights to 1.
 		particles.push_back(p);
 	}
+	
+	weights = vector<double>(num_particles);
 	
 	// Initialization done
 	is_initialized = true;
@@ -52,21 +55,25 @@ void ParticleFilter::prediction(double delta_t, double std_pos[], double velocit
 	
 	// Add measurements to each particle
 	for (int i=0; i<num_particles; i++) {
-		particles[i].x = particles[i].x + (velocity/yaw_rate)*(sin(particles[i].theta + yaw_rate*delta_t) - sin(particles[i].theta));
-		particles[i].y = particles[i].y + (velocity/yaw_rate)*(cos(particles[i].theta) - cos(particles[i].theta + yaw_rate*delta_t));
-		particles[i].theta = particles[i].theta + yaw_rate*delta_t;
+		double x = particles[i].x;
+		double y = particles[i].y;
+		double theta = particles[i].theta;
+		
+		x += (velocity/yaw_rate)*(sin(theta + yaw_rate*delta_t) - sin(theta));
+		y += (velocity/yaw_rate)*(cos(theta) - cos(theta + yaw_rate*delta_t));
+		theta += yaw_rate*delta_t;
 				
 		// add random Gaussian noise.
 		// NOTE: When adding noise you may find std::normal_distribution and std::default_random_engine useful.
 		//  http://en.cppreference.com/w/cpp/numeric/random/normal_distribution
 		//  http://www.cplusplus.com/reference/random/default_random_engine/
-		normal_distribution<double> dist_x(particles[i].x, std_pos[0]);
+		normal_distribution<double> dist_x(x, std_pos[0]);
 		particles[i].x = dist_x(gen);
 		
-		normal_distribution<double> dist_y(particles[i].y, std_pos[1]);
+		normal_distribution<double> dist_y(y, std_pos[1]);
 		particles[i].y = dist_y(gen);
 		
-		normal_distribution<double> dist_theta(particles[i].theta, std_pos[2]);
+		normal_distribution<double> dist_theta(theta, std_pos[2]);
 		particles[i].theta = dist_theta(gen);
 	}
 
@@ -77,19 +84,27 @@ void ParticleFilter::dataAssociation(std::vector<LandmarkObs> predicted, std::ve
 	//   observed measurement to this particular landmark.
 	// NOTE: this method will NOT be called by the grading code. But you will probably find it useful to 
 	//   implement this method and use it as a helper during the updateWeights phase.
+	vector<int> a = vector<int>(observations.size());
+	vector<double> x = vector<double>(observations.size());
+	vector<double> y = vector<double>(observations.size());
 	
-	for (int i=0; i<(int)observations.size(); i++) {
+	for (int i=0; i<observations.size(); i++) {
 		double distance = 9999;
 		for (int j=0; j<(int)predicted.size(); j++) {
 			double d = dist(observations[i].x, observations[i].y, predicted[j].x, predicted[j].y);
 			if (d<distance) {
 				distance = d;
-				observations[i].id = predicted[j].id;
-				//cout << "predicted id: " << predicted[j].id << endl;
+				a[i] = predicted[j].id;
+				x[i] = predicted[j].x;
+				y[i] = predicted[j].y;
+				//observations[i].id = predicted[j].id;
 			}
-			//cout << "distance: " << distance << endl;
 		}
 	}
+	
+	associations = a;
+	sense_x = x;
+	sense_y = y;
 }
 
 void ParticleFilter::updateWeights(double sensor_range, double std_landmark[], 
@@ -110,14 +125,15 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 		// find landmarks in range
 		vector<LandmarkObs> landmarks_in_range;
 		for (int j=0; j<(int)map_landmarks.landmark_list.size(); j++) {
-			double dist_landmark = dist((double)map_landmarks.landmark_list[j].x_f, (double)map_landmarks.landmark_list[j].y_f, particles[i].x, particles[i].y);
+			double dist_landmark = dist(map_landmarks.landmark_list[j].x_f, map_landmarks.landmark_list[j].y_f, particles[i].x, particles[i].y);
+			
 			if ( dist_landmark <= sensor_range) {
 				LandmarkObs obs;
+				obs.id = map_landmarks.landmark_list[j].id_i;
 				obs.x = map_landmarks.landmark_list[j].x_f;
 				obs.y = map_landmarks.landmark_list[j].y_f;
-				obs.id = map_landmarks.landmark_list[j].id_i;
 				landmarks_in_range.push_back(obs);
-				cout << obs.x << " " << obs.y << " " << obs.id << endl;
+				//cout << obs.x << " " << obs.y << " " << obs.id << endl;
 			}
 		}
 		cout << "Number of Landmarks in range: " << landmarks_in_range.size() << endl;
@@ -125,8 +141,12 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 		vector<LandmarkObs> observations_MCS;
 		for (int j=0; j<(int)observations.size(); j++) {
 			LandmarkObs obs;
-        		obs.x = particles[i].x + cos(particles[i].theta)*observations[j].x - sin(particles[i].theta)*observations[j].y;
-			obs.y = particles[i].y + sin(particles[i].theta)*observations[j].x + cos(particles[i].theta)*observations[j].y;
+			double p_theta = particles[i].theta;
+			double x_obs = observations[j].x;
+			double y_obs = observations[j].y
+			obs.id = observations[j].id_i;
+        		obs.x = particles[i].x + cos(p_theta)*x_obs - sin(p_theta)*y_obs;
+			obs.y = particles[i].y + sin(p_theta)*x_obs + cos(p_theta)*y_obs;
 			observations_MCS.push_back(obs);
 		}
 		cout << "Number of Observations: " << observations_MCS.size() << endl;
@@ -150,18 +170,19 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 			double exponent = ( pow((observations_MCS[j].x-mu_x),2) / 2*pow(std_landmark[0],2) ) + ( pow((observations_MCS[j].y-mu_y),2)/ 2*pow(std_landmark[1],2));
 			
 			// calculate weight using normalization terms and exponent
-			particles[i].weight = gauss_norm * exp(-exponent);
+			double weight = gauss_norm * exp(-exponent);
+			particles[i].weight = weight;
+			weights[i] = weight;
 		}
 	}
 	
 	// Normalization of the weights
-	double weights_sum = 0.0;
-	for (int i=0; i<num_particles; i++) {
-		weights_sum += particles[i].weight;
-	}
+	double weights_sum =  accumulate(weights.begin(), weights.end(), 0); // source: https://stackoverflow.com/questions/6743003/how-calculate-sum-of-values-in-stdvectorint
 	//cout << weights_sum << endl;
+	weights /= weights_sum;
+	
 	for (int i=0; i<num_particles; i++) {
-		particles[i].weight /= weights_sum;
+		particles[i].weight = weights[i];
 	}	
 }
 
@@ -173,24 +194,14 @@ void ParticleFilter::resample() {
 	
 	vector<Particle> particles_resampled(num_particles);
 	
-	// get all weights
-	vector<double> all_weights;
-	for (int i=0; i<num_particles; i++) {
-		all_weights.push_back(particles[i].weight);
-	}
-	
-	discrete_distribution<> d(all_weights.begin(), all_weights.end());
+	discrete_distribution<> d(weights.begin(), weights.end());
 	
 	for (int i=0; i<num_particles; ++i) {
-		int j = d(gen);
-		particles_resampled.push_back(particles[j]);
+		particles_resampled[i] = particles[d(gen)];
 	}
 	
 	particles = particles_resampled;
 
-	//for (int i=0; i<num_particles; i++) {
-	//	particles[i].weight = 1.0;
-	//}
 }
 
 Particle ParticleFilter::SetAssociations(Particle& particle, const std::vector<int>& associations, 
