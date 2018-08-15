@@ -31,13 +31,14 @@ void ParticleFilter::init(double x, double y, double theta, double std[]) {
 	normal_distribution<double> dist_y(y, std[1]);
 	normal_distribution<double> dist_theta(theta, std[2]);
 			
-	for (i=0; i<num_particles; i++) {
-		particles[i].id = i;
-		particles[i].x = dist_x(gen);
-		particles[i].y = dist_y(gen);
-		particles[i].theta = dist_theta(gen);
-		// and all weights to 1.
-		particles[i].weight = 1;
+	for (int i=0; i<num_particles; i++) {
+		Particle p;
+		p.id = i;
+		p.x = dist_x(gen);
+		p.y = dist_y(gen);
+		p.theta = dist_theta(gen);
+		p.weight = 1; // and all weights to 1.
+		particles.push_back(p);
 	}
 	
 	// Initialization done
@@ -46,7 +47,7 @@ void ParticleFilter::init(double x, double y, double theta, double std[]) {
 
 void ParticleFilter::prediction(double delta_t, double std_pos[], double velocity, double yaw_rate) {
 	// Add measurements to each particle
-	for (i=0; i<num_particles; i++) {
+	for (int i=0; i<num_particles; i++) {
 		particles[i].x = particles[i].x + (velocity/yaw_rate)*(sin(particles[i].theta + yaw_rate*delta_t) - sin(particles[i].theta));
 		particles[i].y = particles[i].y + (velocity/yaw_rate)*(cos(particles[i].theta) - cos(particles[i].theta + yaw_rate*delta_t));
 		particles[i].theta = particles[i].theta + yaw_rate*delta_t;
@@ -73,9 +74,9 @@ void ParticleFilter::dataAssociation(std::vector<LandmarkObs> predicted, std::ve
 	// NOTE: this method will NOT be called by the grading code. But you will probably find it useful to 
 	//   implement this method and use it as a helper during the updateWeights phase.
 	
-	for (i=0; i<observations.size(); i++) {
+	for (int i=0; i<observations.size(); i++) {
 		double distance = 9999;
-		for (j=0; j<predicted.size(); j++) {
+		for (int j=0; j<predicted.size(); j++) {
 			double d = dist(observations[i].x, observations[i].y, predicted[j].x, predicted[j].y);
 			if (d<distance) {
 				distance = d;
@@ -97,6 +98,62 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 	//   and the following is a good resource for the actual equation to implement (look at equation 
 	//   3.33
 	//   http://planning.cs.uiuc.edu/node99.html
+	
+	for (i=0; i<num_particles; i++) {
+		
+		// find landmarks in range
+		std::vector<LandmarkObs> landmarks_in_range;
+		for (int j=0; j<map_landmarks.landmark_list.size(); j++) {
+			double dist_landmark = dist(map_landmarks.landmark_list[j].x_f, map_landmarks.landmark_list[j].y_f, particles[i].x, particles[i].y);
+			if ( dist_landmark <= sensor_range) {
+				LandmarkObs obs;
+				obs.x = map_landmarks.landmark_list[j].x_f;
+				obs.y = map_landmarks.landmark_list[j].y_f;
+				obs.id = map_landmarks.landmark_list[j].id_i;
+				landmarks_in_range.push_back(obs);
+			}
+		}
+		
+		// transformation of observations from VEHICLE'S coordinate system into MAP'S coordinate system
+		std::vector<LandmarkObs> observations_MCS;
+		for (int j=0; j<observations.size(); j++) {
+			LandmarkObs obs;
+        		obs.x = particles[i].x + cos(particles[i].theta)*observations[j].x - sin(particles[i].theta)*observations[j].y;
+			obs.y = particles[i].y + sin(particles[i].theta)*observations[j].x + cos(particles[i].theta)*observations[j].y;
+			observations_MCS.push_back(obs);
+		}
+		
+		// Find closest predicted measurements to observed measurements and assign the observed measurements to this particular landmarks
+		dataAssociation(landmarks_in_range, observations_MCS);
+		
+		// calculate weights
+		double gauss_norm = ( 1 / (2*M_PI*std_landmark[0]*std_landmark[1]) ); // calculate normalization term
+		
+		for (int j=0; j<observations_MCS.size(); j++) {
+			for (int k=0; k<landmarks_in_range.size(); k++) {
+				if (landmarks_in_range[k].id == observations_MCS[j].id) {
+					mu_x = landmarks_in_range[k].x;
+					mu_y = landmarks_in_range[k].y;
+				}
+				// ToDo: catch else error!
+			}
+			// calculate exponent
+			double exponent = ((observations_MCS[j].x - mu_x)**2)/(2 * std_landmark[0]**2) + ((observations_MCS[j].y - mu_y)**2)/(2 * std_landmark[1]**2);
+			
+			// calculate weight using normalization terms and exponent
+			particles[i].weight = gauss_norm * exp(-exponent);
+		}
+	}
+	
+	// Normalization
+	double weights_sum = 0;
+	for (i=0; i<num_particles; i++) {
+		weights_sum += particles[i].weight;
+	}
+	
+	for (i=0; i<num_particles; i++) {
+		particles[i].weight /= weights_sum;
+	}	
 }
 
 void ParticleFilter::resample() {
