@@ -102,7 +102,7 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 	for (i=0; i<num_particles; i++) {
 		
 		// find landmarks in range
-		std::vector<LandmarkObs> landmarks_in_range;
+		vector<LandmarkObs> landmarks_in_range;
 		for (int j=0; j<map_landmarks.landmark_list.size(); j++) {
 			double dist_landmark = dist(map_landmarks.landmark_list[j].x_f, map_landmarks.landmark_list[j].y_f, particles[i].x, particles[i].y);
 			if ( dist_landmark <= sensor_range) {
@@ -115,7 +115,7 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 		}
 		
 		// transformation of observations from VEHICLE'S coordinate system into MAP'S coordinate system
-		std::vector<LandmarkObs> observations_MCS;
+		vector<LandmarkObs> observations_MCS;
 		for (int j=0; j<observations.size(); j++) {
 			LandmarkObs obs;
         		obs.x = particles[i].x + cos(particles[i].theta)*observations[j].x - sin(particles[i].theta)*observations[j].y;
@@ -147,11 +147,11 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 	
 	// Normalization
 	double weights_sum = 0;
-	for (i=0; i<num_particles; i++) {
+	for (int i=0; i<num_particles; i++) {
 		weights_sum += particles[i].weight;
 	}
 	
-	for (i=0; i<num_particles; i++) {
+	for (int i=0; i<num_particles; i++) {
 		particles[i].weight /= weights_sum;
 	}	
 }
@@ -160,7 +160,21 @@ void ParticleFilter::resample() {
 	// TODO: Resample particles with replacement with probability proportional to their weight. 
 	// NOTE: You may find std::discrete_distribution helpful here.
 	//   http://en.cppreference.com/w/cpp/numeric/random/discrete_distribution
-
+	vector<Particle> particles_resampled(num_particles);
+	
+	// get all weights
+	vector<double> all_weights;
+	for (int i=0; i<num_particles; i++) {
+		all_weights.push_back(particles[i].weight);
+	}
+	
+	discrete_distribution<> d(all_weights.begin(), all_weights.end());
+	
+	std::map<int, int> m;
+	for (int i=0; i<num_particles; ++i) {
+		int j = d(gen);
+		particles_resampled[i] = particles[j];
+	}
 }
 
 Particle ParticleFilter::SetAssociations(Particle& particle, const std::vector<int>& associations, 
